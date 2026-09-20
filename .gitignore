@@ -6,8 +6,7 @@ dist/
 wheels/
 *.egg-info
 spec
-lottery-1
-lottery
+lottery.png
 
 # Virtual environments
 .venv
