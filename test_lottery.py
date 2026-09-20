@@ -18,13 +18,17 @@ class LotterySpecTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "lottery.db"
+        self.phone_index = 0
         backend_app.init_db(self.db_path)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def register(self, name):
-        return backend_app.register_participant(name, self.db_path)
+    def register(self, name, phone=None):
+        if phone is None:
+            self.phone_index += 1
+            phone = f"1390000{self.phone_index:04d}"
+        return backend_app.register_participant(name, phone, self.db_path)
 
     def draw(self, payload=None):
         return backend_app.draw_winner(payload, self.db_path)
@@ -36,6 +40,7 @@ class LotterySpecTests(unittest.TestCase):
         result = self.register("张三")
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["name"], "张三")
+        self.assertEqual(result["data"]["phone"], "13900000001")
         self.assertEqual(result["data"]["number"], 1)
 
     def test_registration_trims_outer_spaces(self):
@@ -54,6 +59,32 @@ class LotterySpecTests(unittest.TestCase):
         self.assertEqual(result["data"]["draw"]["round"], 1)
         self.assertEqual(result["data"]["winner"]["name"], "张三")
         self.assertEqual(result["data"]["winner"]["number"], 1)
+        self.assertEqual(result["data"]["winners"], [result["data"]["winner"]])
+
+    def test_draw_multiple_winners_without_duplicates(self):
+        for name in ["张三", "李四", "王五", "赵六"]:
+            self.register(name)
+
+        result = self.draw({"count": 3, "exclude_winners": True})
+
+        self.assertTrue(result["success"])
+        winners = result["data"]["winners"]
+        self.assertEqual(len(winners), 3)
+        self.assertEqual(len({winner["id"] for winner in winners}), 3)
+        self.assertEqual(result["data"]["winner"], winners[0])
+        self.assertEqual(result["data"]["draw"]["round"], 1)
+
+        available = backend_app.list_available_participants(self.db_path)
+        self.assertEqual(len(available["data"]["participants"]), 1)
+
+    def test_draw_more_than_available_participants_fails(self):
+        self.register("张三")
+        self.register("李四")
+
+        result = self.draw({"count": 3, "exclude_winners": True})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "NO_AVAILABLE_PARTICIPANTS")
 
     def test_draw_uses_random_choice_from_available_participants(self):
         for name in ["张三", "李四", "王五"]:
@@ -74,7 +105,7 @@ class LotterySpecTests(unittest.TestCase):
         self.assertEqual(result["data"]["winner"]["name"], "王五")
 
     def test_draw_record_is_exported_with_matching_data(self):
-        self.register("张三")
+        registered = self.register("张三", "13800138000")
         draw = self.draw()
         ok, exported = backend_app.export_winners("csv", self.db_path)
         rows = list(csv.DictReader(exported.splitlines()))
@@ -83,6 +114,7 @@ class LotterySpecTests(unittest.TestCase):
         self.assertEqual(rows[0]["round"], str(draw["data"]["draw"]["round"]))
         self.assertEqual(rows[0]["number"], str(draw["data"]["winner"]["number"]))
         self.assertEqual(rows[0]["name"], draw["data"]["winner"]["name"])
+        self.assertEqual(rows[0]["phone"], registered["data"]["phone"])
         self.assertTrue(rows[0]["created_at"])
 
     def test_pages_contain_required_controls(self):
@@ -93,6 +125,7 @@ class LotterySpecTests(unittest.TestCase):
         draw_script = (backend_app.FRONTEND_DIR / "draw.js").read_text(encoding="utf-8")
         self.assertIn("扫码取号", register_page)
         self.assertIn("姓名", register_page)
+        self.assertIn("手机号", register_page)
         self.assertIn("提交取号", register_page)
         self.assertIn("参与抽奖", home_join_page)
         self.assertIn("/home/draw", home_join_page)
@@ -144,14 +177,48 @@ class LotterySpecTests(unittest.TestCase):
                 self.assertFalse(result["success"])
                 self.assertEqual(result["error"]["code"], "INVALID_NAME")
 
-    def test_duplicate_names_are_rejected_after_trimming(self):
+    def test_duplicate_names_are_allowed_with_different_phones(self):
         self.assertTrue(self.register("张三")["success"])
-        for value in ["张三", " 张三 "]:
+        result = self.register(" 张三 ")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["name"], "张三")
+        self.assertEqual(result["data"]["number"], 2)
+
+    def test_invalid_phone_numbers_are_rejected(self):
+        for value, code, message in [
+            ("", "PHONE_TOO_SHORT", "电话号码不足11位"),
+            ("1234567890", "PHONE_TOO_SHORT", "电话号码不足11位"),
+            ("1380013800a", "INVALID_PHONE", "手机号不能为空或格式不正确"),
+            ("138-013800", "INVALID_PHONE", "手机号不能为空或格式不正确"),
+            ("123456789012", "INVALID_PHONE", "手机号不能为空或格式不正确"),
+            (12345678901, "INVALID_PHONE", "手机号不能为空或格式不正确"),
+        ]:
             with self.subTest(value=value):
-                result = self.register(value)
+                result = backend_app.register_participant("张三", value, self.db_path)
                 self.assertFalse(result["success"])
-                self.assertEqual(result["error"]["code"], "DUPLICATE_NAME")
-                self.assertEqual(result["error"]["message"], "不可重复取号")
+                self.assertEqual(result["error"]["code"], code)
+                self.assertEqual(result["error"]["message"], message)
+
+    def test_duplicate_phone_is_rejected_with_existing_number(self):
+        first = self.register("张三", "13800138000")
+        second = self.register("李四", "13800138000")
+        self.assertTrue(first["success"])
+        self.assertFalse(second["success"])
+        self.assertEqual(second["error"]["code"], "DUPLICATE_PHONE")
+        self.assertEqual(second["error"]["message"], "不能重复取号")
+        self.assertEqual(second["data"]["name"], first["data"]["name"])
+        self.assertEqual(second["data"]["number"], first["data"]["number"])
+
+    def test_duplicate_phone_is_checked_from_existing_database_after_restart(self):
+        first = self.register("张三", "13800138000")
+        backend_app.init_db(self.db_path)
+
+        second = backend_app.register_participant("李四", "13800138000", self.db_path)
+
+        self.assertTrue(first["success"])
+        self.assertFalse(second["success"])
+        self.assertEqual(second["error"]["code"], "DUPLICATE_PHONE")
+        self.assertEqual(second["data"]["number"], first["data"]["number"])
 
     def test_draw_without_participants_fails(self):
         result = self.draw()
@@ -167,7 +234,7 @@ class LotterySpecTests(unittest.TestCase):
 
     def test_invalid_draw_requests_are_rejected(self):
         self.register("张三")
-        for payload in [{"count": 0}, {"count": 2}, {"exclude_winners": False}, {"count": "1"}]:
+        for payload in [{"count": 0}, {"exclude_winners": False}, {"count": "1"}]:
             with self.subTest(payload=payload):
                 result = self.draw(payload)
                 self.assertFalse(result["success"])
@@ -201,11 +268,11 @@ class LotterySpecTests(unittest.TestCase):
         numbers = sorted(result["data"]["number"] for result in results)
         self.assertEqual(numbers, list(range(1, 101)))
 
-    def test_concurrent_duplicate_registration_allows_only_one_success(self):
+    def test_concurrent_duplicate_phone_allows_only_one_success(self):
         with ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(self.register, ["张三"] * 10))
+            results = list(executor.map(lambda _: self.register("张三", "13800138000"), range(10)))
         success_count = sum(1 for result in results if result["success"])
-        duplicate_count = sum(1 for result in results if not result["success"] and result["error"]["code"] == "DUPLICATE_NAME")
+        duplicate_count = sum(1 for result in results if not result["success"] and result["error"]["code"] == "DUPLICATE_PHONE")
         self.assertEqual(success_count, 1)
         self.assertEqual(duplicate_count, 9)
 
@@ -241,7 +308,7 @@ class LotterySpecTests(unittest.TestCase):
     def test_empty_winner_export_returns_header_only(self):
         ok, exported = backend_app.export_winners("csv", self.db_path)
         self.assertTrue(ok)
-        self.assertEqual(exported.splitlines(), ["round,number,name,created_at"])
+        self.assertEqual(exported.splitlines(), ["round,number,name,phone,created_at"])
 
     def test_draw_after_reset_without_new_participants_fails(self):
         self.register("张三")
@@ -267,16 +334,20 @@ class WsgiIntegrationTests(unittest.TestCase):
         backend_app.DATABASE_PATH = Path(os.environ.get("LOTTERY_DB", backend_app.PROJECT_ROOT / "lottery.db"))
         self.tmp.cleanup()
 
-    def request(self, method, path, body=None, query_string=""):
+    def request(self, method, path, body=None, query_string="", cookie=""):
         encoded = b""
         if body is not None:
-            encoded = json.dumps(body).encode("utf-8")
+            if isinstance(body, bytes):
+                encoded = body
+            else:
+                encoded = json.dumps(body).encode("utf-8")
         environ = {
             "REQUEST_METHOD": method,
             "PATH_INFO": path,
             "QUERY_STRING": query_string,
             "CONTENT_LENGTH": str(len(encoded)),
             "wsgi.input": io.BytesIO(encoded),
+            "HTTP_COOKIE": cookie,
         }
         captured = {}
 
@@ -288,17 +359,24 @@ class WsgiIntegrationTests(unittest.TestCase):
         return captured["status"], captured["headers"], response_body
 
     def test_backend_serves_frontend_files(self):
-        status, headers, body = self.request("GET", "/home")
+        status, headers, body = self.request("GET", "/home/login")
+        self.assertEqual(status, "200 OK")
+        self.assertIn("text/html", headers["Content-Type"])
+        self.assertIn("访问验证".encode("utf-8"), body)
+
+        cookie = f"{backend_app.HOME_AUTH_COOKIE}={backend_app.HOME_AUTH_TOKEN}"
+
+        status, headers, body = self.request("GET", "/home", cookie=cookie)
         self.assertEqual(status, "200 OK")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn("参与抽奖".encode("utf-8"), body)
 
-        status, headers, body = self.request("GET", "/home/join")
+        status, headers, body = self.request("GET", "/home/join", cookie=cookie)
         self.assertEqual(status, "200 OK")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn("/lottery.png".encode("utf-8"), body)
 
-        status, headers, body = self.request("GET", "/home/draw")
+        status, headers, body = self.request("GET", "/home/draw", cookie=cookie)
         self.assertEqual(status, "200 OK")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn("开始抽奖".encode("utf-8"), body)
@@ -315,19 +393,50 @@ class WsgiIntegrationTests(unittest.TestCase):
         self.assertEqual(status, "200 OK")
         self.assertIn("/api/register", body.decode("utf-8"))
 
+    def test_home_pages_require_password(self):
+        status, headers, _ = self.request("GET", "/home/draw")
+        self.assertEqual(status, "302 Found")
+        self.assertTrue(headers["Location"].startswith("/home/login"))
+
+        form = b"password=123456"
+        status, headers, _ = self.request("POST", "/home/login", form, query_string="next=%2Fhome%2Fdraw")
+        self.assertEqual(status, "302 Found")
+        self.assertEqual(headers["Location"], "/home/draw")
+        self.assertIn(f"{backend_app.HOME_AUTH_COOKIE}=", headers["Set-Cookie"])
+
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        status, _, body = self.request("GET", "/home/draw", cookie=cookie)
+        self.assertEqual(status, "200 OK")
+        self.assertIn("开始抽奖".encode("utf-8"), body)
+
+    def test_home_logout_returns_to_login_page(self):
+        cookie = f"{backend_app.HOME_AUTH_COOKIE}={backend_app.HOME_AUTH_TOKEN}"
+        status, headers, _ = self.request("POST", "/home/logout", cookie=cookie)
+        self.assertEqual(status, "302 Found")
+        self.assertEqual(headers["Location"], "/home/login?logged_out=1")
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+
+    def test_admin_api_requires_home_password(self):
+        status, _, body = self.request("GET", "/api/participants")
+        result = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, "401 Unauthorized")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "UNAUTHORIZED")
+
     def test_frontend_api_endpoints_are_connected(self):
-        status, _, body = self.request("POST", "/api/register", {"name": "张三"})
+        cookie = f"{backend_app.HOME_AUTH_COOKIE}={backend_app.HOME_AUTH_TOKEN}"
+        status, _, body = self.request("POST", "/api/register", {"name": "张三", "phone": "13800138000"})
         registered = json.loads(body.decode("utf-8"))
         self.assertEqual(status, "200 OK")
         self.assertTrue(registered["success"])
 
-        status, _, body = self.request("GET", "/api/participants")
+        status, _, body = self.request("GET", "/api/participants", cookie=cookie)
         participants = json.loads(body.decode("utf-8"))
         self.assertEqual(status, "200 OK")
         self.assertTrue(participants["success"])
         self.assertEqual(participants["data"]["participants"][0]["name"], "张三")
 
-        status, _, body = self.request("POST", "/api/draw", {"count": 1, "exclude_winners": True})
+        status, _, body = self.request("POST", "/api/draw", {"count": 1, "exclude_winners": True}, cookie=cookie)
         drawn = json.loads(body.decode("utf-8"))
         self.assertEqual(status, "200 OK")
         self.assertTrue(drawn["success"])

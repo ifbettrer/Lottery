@@ -9,6 +9,72 @@ body {
   color: #172033;
 }
 
+body.register-page {
+  --register-frame-width: min(720px, calc(100% - 32px));
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(255, 255, 255, .24), rgba(255, 255, 255, .24)),
+    url("/static/verti_bg.jpg") center top / var(--register-frame-width) auto fixed no-repeat,
+    rgba(255, 255, 255, .82);
+}
+
+body.register-page main {
+  width: var(--register-frame-width);
+}
+
+body.register-page section {
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(6px);
+}
+
+body.home-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(246, 247, 249, .22), rgba(246, 247, 249, .22)),
+    url("/wedding.jpg") center / cover fixed no-repeat;
+}
+
+body.home-draw-page {
+  background:
+    linear-gradient(rgba(246, 247, 249, .36), rgba(246, 247, 249, .36)),
+    url("/bg.jpg") center / cover fixed no-repeat;
+}
+
+body.home-page main {
+  margin: 32px auto;
+}
+
+.home-login-page main {
+  max-width: 420px;
+}
+
+body.home-join-page main {
+  transform: translateX(min(20vw, 240px));
+}
+
+body.home-join-page .home-nav {
+  width: min(380px, 100%);
+  margin-left: auto;
+}
+
+body.home-join-page .home-nav a,
+body.home-join-page .home-nav .nav-logout {
+  min-height: 38px;
+  font-size: 15px;
+}
+
+body.home-page section,
+body.home-page .home-nav a,
+body.home-page .home-nav .nav-logout {
+  background: rgba(255, 255, 255, .78);
+  backdrop-filter: blur(6px);
+}
+
+body.home-page .home-nav a.active {
+  background: rgba(31, 111, 235, .86);
+}
+
 main {
   width: min(720px, calc(100% - 32px));
   margin: 40px auto;
@@ -20,12 +86,23 @@ main {
   margin-bottom: 16px;
 }
 
-.home-nav a {
+.home-nav a,
+.home-nav form {
   flex: 1;
+}
+
+.home-nav form {
+  margin: 0;
+}
+
+.home-nav a,
+.home-nav .nav-logout {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
   border: 1px solid #b8c0cc;
   border-radius: 6px;
   background: #fff;
@@ -33,6 +110,10 @@ main {
   font-size: 16px;
   font-weight: 600;
   text-decoration: none;
+}
+
+.home-nav .nav-logout {
+  margin-top: 0;
 }
 
 .home-nav a.active {
@@ -68,6 +149,10 @@ input {
   border-radius: 6px;
 }
 
+input + label {
+  margin-top: 16px;
+}
+
 button,
 a.button {
   display: inline-flex;
@@ -100,15 +185,34 @@ button:disabled {
   gap: 12px;
 }
 
+.count-field {
+  max-width: 180px;
+  margin-bottom: 0;
+}
+
 .image-section {
   padding: 0;
   overflow: hidden;
 }
 
+body.home-page .qr-section {
+  min-height: min(68vh, 620px);
+  position: relative;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
 .lottery-image {
   display: block;
-  width: 100%;
+  width: min(22vw, 240px);
   height: auto;
+  position: absolute;
+  top: 50%;
+  left: 75%;
+  transform: translate(-50%, -50%);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(23, 32, 51, .22);
 }
 
 .result {
@@ -122,14 +226,23 @@ button:disabled {
   margin-top: 22px;
   min-height: 190px;
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   align-content: center;
-  justify-items: center;
+  align-items: stretch;
   gap: 10px;
   border: 1px solid #d9dee7;
   border-radius: 8px;
   background: #f9fbff;
   padding: 24px;
   text-align: center;
+}
+
+.winner-slot {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
 }
 
 .rolling-number {
@@ -166,6 +279,18 @@ button:disabled {
 }
 
 @media (max-width: 520px) {
+  body.home-join-page main {
+    transform: none;
+  }
+
+  body.home-join-page .home-nav {
+    width: 100%;
+  }
+
+  .lottery-image {
+    width: min(42vw, 180px);
+  }
+
   .rolling-number {
     font-size: 56px;
   }

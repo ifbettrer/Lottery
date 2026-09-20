@@ -6,22 +6,31 @@
   <title>抽奖</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
+<body class="home-page home-draw-page">
   <main>
     <nav class="home-nav" aria-label="抽奖页面导航">
       <a href="/home/join">参与抽奖</a>
       <a class="active" href="/home/draw">抽奖</a>
+      <form method="post" action="/home/logout">
+        <button class="nav-logout" type="submit">退出</button>
+      </form>
     </nav>
     <section>
       <h1>抽奖</h1>
+      <label class="count-field" for="draw-count">
+        抽取人数
+        <input id="draw-count" name="count" type="number" min="1" step="1" value="1" inputmode="numeric">
+      </label>
       <div class="row">
         <button id="draw-button" type="button">开始抽奖</button>
         <a class="button" href="/api/export?format=csv">导出中奖记录</a>
         <button id="reset-button" class="danger" type="button">重置活动</button>
       </div>
       <div class="draw-display" aria-hidden="true">
-        <div id="rolling-number" class="rolling-number">--</div>
-        <div id="rolling-name" class="rolling-name">等待抽奖</div>
+        <div class="winner-slot">
+          <div class="rolling-number">--</div>
+          <div class="rolling-name">等待抽奖</div>
+        </div>
       </div>
       <div id="result" class="result" aria-live="polite"></div>
     </section>

@@ -31,6 +31,20 @@ uv run python main.py
 - 后端 API
 - 中奖记录 CSV 下载
 
+### 管理页面密码
+
+`/home`、`/home/join`、`/home/draw` 以及抽奖、导出、重置等管理接口需要先输入访问密码。默认密码为：
+
+```text
+123456
+```
+
+如需修改密码，可在启动时设置 `HOME_PASSWORD`：
+
+```bash
+HOME_PASSWORD=你的密码 uv run python main.py
+```
+
 ### 页面地址
 
 - 总页面：`http://127.0.0.1:8000/home`

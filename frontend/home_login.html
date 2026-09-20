@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>访问验证</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="home-page home-login-page">
+  <main>
+    <section>
+      <h1>访问验证</h1>
+      <form method="post" action="/home/login">
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button type="submit">进入</button>
+      </form>
+      <div class="result auth-error" aria-live="polite"></div>
+    </section>
+  </main>
+  <script>
+    if (new URLSearchParams(window.location.search).get("error")) {
+      document.querySelector(".auth-error").textContent = "密码不正确";
+    }
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next) {
+      document.querySelector("form").action = `/home/login?next=${encodeURIComponent(next)}`;
+    }
+  </script>
+</body>
+</html>

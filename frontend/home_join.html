@@ -6,13 +6,16 @@
   <title>参与抽奖</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
+<body class="home-page home-join-page">
   <main>
     <nav class="home-nav" aria-label="抽奖页面导航">
       <a class="active" href="/home/join">参与抽奖</a>
       <a href="/home/draw">抽奖</a>
+      <form method="post" action="/home/logout">
+        <button class="nav-logout" type="submit">退出</button>
+      </form>
     </nav>
-    <section class="image-section">
+    <section class="image-section qr-section">
       <img class="lottery-image" src="/lottery.png" alt="参与抽奖">
     </section>
   </main>
