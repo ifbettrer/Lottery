@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>扫码取号</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main>
+    <section>
+      <h1>扫码取号</h1>
+      <form id="register-form">
+        <label for="name">姓名</label>
+        <input id="name" name="name" maxlength="50" autocomplete="name" required>
+        <button id="submit-button" type="submit">提交取号</button>
+      </form>
+      <div id="result" class="result" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="/static/register.js"></script>
+</body>
+</html>
