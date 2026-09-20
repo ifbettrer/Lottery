@@ -117,3 +117,60 @@ button:disabled {
   font-size: 18px;
   line-height: 1.5;
 }
+
+.draw-display {
+  margin-top: 22px;
+  min-height: 190px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #f9fbff;
+  padding: 24px;
+  text-align: center;
+}
+
+.rolling-number {
+  min-width: 160px;
+  font-size: 72px;
+  font-weight: 800;
+  line-height: 1;
+  color: #1f6feb;
+  font-variant-numeric: tabular-nums;
+}
+
+.rolling-name {
+  width: 100%;
+  min-height: 42px;
+  overflow-wrap: anywhere;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #172033;
+}
+
+.draw-display.rolling .rolling-number,
+.draw-display.rolling .rolling-name {
+  transform: scale(1.02);
+}
+
+.draw-display.winner {
+  border-color: #2da44e;
+  background: #f6fff8;
+}
+
+.draw-display.winner .rolling-number {
+  color: #1a7f37;
+}
+
+@media (max-width: 520px) {
+  .rolling-number {
+    font-size: 56px;
+  }
+
+  .rolling-name {
+    font-size: 24px;
+  }
+}

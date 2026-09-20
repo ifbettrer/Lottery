@@ -19,6 +19,10 @@
         <a class="button" href="/api/export?format=csv">导出中奖记录</a>
         <button id="reset-button" class="danger" type="button">重置活动</button>
       </div>
+      <div class="draw-display" aria-hidden="true">
+        <div id="rolling-number" class="rolling-number">--</div>
+        <div id="rolling-name" class="rolling-name">等待抽奖</div>
+      </div>
       <div id="result" class="result" aria-live="polite"></div>
     </section>
   </main>

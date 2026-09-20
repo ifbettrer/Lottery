@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from socketserver import ThreadingMixIn
+from unittest.mock import patch
 
 from backend import app as backend_app
 
@@ -53,6 +55,24 @@ class LotterySpecTests(unittest.TestCase):
         self.assertEqual(result["data"]["winner"]["name"], "张三")
         self.assertEqual(result["data"]["winner"]["number"], 1)
 
+    def test_draw_uses_random_choice_from_available_participants(self):
+        for name in ["张三", "李四", "王五"]:
+            self.register(name)
+
+        captured_candidates = []
+
+        def choose_last(candidates):
+            captured_candidates.extend(row["name"] for row in candidates)
+            return candidates[-1]
+
+        with patch.object(backend_app.secrets, "choice", side_effect=choose_last) as random_choice:
+            result = self.draw()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(random_choice.call_count, 1)
+        self.assertEqual(captured_candidates, ["张三", "李四", "王五"])
+        self.assertEqual(result["data"]["winner"]["name"], "王五")
+
     def test_draw_record_is_exported_with_matching_data(self):
         self.register("张三")
         draw = self.draw()
@@ -83,6 +103,7 @@ class LotterySpecTests(unittest.TestCase):
         self.assertIn("重置活动", draw_page)
         self.assertIn("/api/register", register_script)
         self.assertIn("/api/draw", draw_script)
+        self.assertIn("/api/participants", draw_script)
         self.assertIn("/api/reset", draw_script)
 
     def test_multiple_draws_permanently_exclude_winners(self):
@@ -94,6 +115,17 @@ class LotterySpecTests(unittest.TestCase):
         rounds = [result["data"]["draw"]["round"] for result in draws]
         self.assertEqual(len(set(names)), 3)
         self.assertEqual(rounds, [1, 2, 3])
+
+    def test_available_participants_excludes_previous_winners(self):
+        for name in ["张三", "李四", "王五"]:
+            self.register(name)
+        with patch.object(backend_app.secrets, "choice", side_effect=lambda candidates: candidates[1]):
+            self.draw()
+
+        result = backend_app.list_available_participants(self.db_path)
+
+        self.assertTrue(result["success"])
+        self.assertEqual([row["name"] for row in result["data"]["participants"]], ["张三", "王五"])
 
     def test_reset_clears_data_and_restarts_numbering(self):
         self.register("张三")
@@ -289,11 +321,22 @@ class WsgiIntegrationTests(unittest.TestCase):
         self.assertEqual(status, "200 OK")
         self.assertTrue(registered["success"])
 
+        status, _, body = self.request("GET", "/api/participants")
+        participants = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, "200 OK")
+        self.assertTrue(participants["success"])
+        self.assertEqual(participants["data"]["participants"][0]["name"], "张三")
+
         status, _, body = self.request("POST", "/api/draw", {"count": 1, "exclude_winners": True})
         drawn = json.loads(body.decode("utf-8"))
         self.assertEqual(status, "200 OK")
         self.assertTrue(drawn["success"])
         self.assertEqual(drawn["data"]["winner"]["name"], "张三")
+
+    def test_runtime_server_is_threaded_for_concurrent_requests(self):
+        self.assertTrue(issubclass(backend_app.ThreadedWSGIServer, ThreadingMixIn))
+        self.assertTrue(backend_app.ThreadedWSGIServer.daemon_threads)
+        self.assertGreaterEqual(backend_app.ThreadedWSGIServer.request_queue_size, 200)
 
 
 if __name__ == "__main__":

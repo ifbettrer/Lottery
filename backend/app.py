@@ -11,9 +11,10 @@ import threading
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
+from socketserver import ThreadingMixIn
 from typing import Any
 from urllib.parse import parse_qs
-from wsgiref.simple_server import make_server
+from wsgiref.simple_server import WSGIServer, make_server
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,12 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DATABASE_PATH = Path(os.environ.get("LOTTERY_DB", PROJECT_ROOT / "lottery.db"))
 MAX_NAME_LENGTH = 50
 DB_LOCK = threading.RLock()
+DEFAULT_THREAD_POOL_SIZE = 200
+
+
+class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
+    daemon_threads = True
+    request_queue_size = DEFAULT_THREAD_POOL_SIZE
 
 
 ERROR_MESSAGES = {
@@ -188,6 +195,27 @@ def draw_winner(payload: dict[str, Any] | None = None, db_path: Path | None = No
             conn.close()
 
 
+def list_available_participants(db_path: Path | None = None) -> dict[str, Any]:
+    with DB_LOCK:
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT p.id, p.name, p.number
+                FROM participants p
+                LEFT JOIN draws d ON d.participant_id = p.id
+                WHERE d.id IS NULL
+                ORDER BY p.number
+                """
+            ).fetchall()
+            participants = [{"id": row["id"], "name": row["name"], "number": row["number"]} for row in rows]
+            return success({"participants": participants})
+        except sqlite3.Error:
+            return failure("STORAGE_ERROR")
+        finally:
+            conn.close()
+
+
 def export_winners(format_value: str = "csv", db_path: Path | None = None) -> tuple[bool, str | dict[str, Any]]:
     if format_value != "csv":
         return False, failure("INVALID_EXPORT_FORMAT")
@@ -292,7 +320,6 @@ def local_lan_ip() -> str | None:
 
 
 def app(environ: dict[str, Any], start_response):
-    init_db()
     method = environ["REQUEST_METHOD"]
     path = environ.get("PATH_INFO", "/")
 
@@ -307,6 +334,8 @@ def app(environ: dict[str, Any], start_response):
     if method == "POST" and path == "/api/draw":
         ok, payload = read_json(environ)
         return json_response(start_response, draw_winner(payload if ok else {"count": None}))
+    if method == "GET" and path == "/api/participants":
+        return json_response(start_response, list_available_participants())
     if method == "GET" and path == "/api/export":
         params = parse_qs(environ.get("QUERY_STRING", ""))
         format_value = params.get("format", ["csv"])[0]
@@ -334,12 +363,13 @@ def main() -> None:
     init_db()
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
-    with make_server(host, port, app) as server:
+    with make_server(host, port, app, server_class=ThreadedWSGIServer) as server:
         print(f"Lottery server running locally at http://127.0.0.1:{port}/home")
         if host in {"", "0.0.0.0"}:
             lan_ip = local_lan_ip()
             if lan_ip:
                 print(f"LAN access: http://{lan_ip}:{port}/home")
+        print(f"Concurrent request server: threaded, queue size {server.request_queue_size}")
         server.serve_forever()
 
 
